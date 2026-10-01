@@ -91,7 +91,7 @@ function Index() {
     if (candidates.length === 0) return;
     const idx = candidates.findIndex((t) => t.status === "active");
     const next = candidates[(idx + dir + candidates.length) % candidates.length];
-    activateTask(next.id);
+    if (next) activateTask(next.id);
   };
 
   const orderedTasks = useMemo(
