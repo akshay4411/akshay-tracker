@@ -50,23 +50,40 @@ function formatClock(d: Date) {
 }
 
 function Index() {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    // Load from localStorage on initial render
+    try {
+      const stored = localStorage.getItem("nokia-tasks");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [now, setNow] = useState(() => Date.now());
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
+  // Save tasks to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem("nokia-tasks", JSON.stringify(tasks));
+  }, [tasks]);
+
   const loadTasks = async () => {
     const { data, error } = await supabase
       .from("tasks")
       .select("*")
       .order("id");
-    if (!error && data) setTasks(data as Task[]);
+    if (!error && data) {
+      setTasks(data as Task[]);
+      setIsLoading(false);
+    }
   };
 
   // Initial load + live sync so the manager sees changes instantly
@@ -90,7 +107,7 @@ function Index() {
   const activeTask = tasks.find((t) => t.status === "active");
   const doneCount = tasks.filter((t) => t.status === "done").length;
 
-  const activateTask = (id: number) => {
+  const activateTask = async (id: number) => {
     const since = new Date().toISOString();
     setTasks((prev) =>
       prev.map((t) => ({
@@ -100,30 +117,31 @@ function Index() {
         since: t.id === id ? since : t.status === "active" ? null : t.since,
       })),
     );
-    void supabase
+    // Update database
+    await supabase
       .from("tasks")
       .update({ status: "todo", since: null })
       .eq("status", "active");
-    void supabase
+    await supabase
       .from("tasks")
       .update({ status: "active", since })
       .eq("id", id);
   };
 
-  const markDone = () => {
+  const markDone = async () => {
     if (!activeTask) return;
     setTasks((prev) =>
       prev.map((t) =>
         t.id === activeTask.id ? { ...t, status: "done", since: null } : t,
       ),
     );
-    void supabase
+    await supabase
       .from("tasks")
       .update({ status: "done", since: null })
       .eq("id", activeTask.id);
   };
 
-  const addTask = () => {
+  const addTask = async () => {
     const title = draft.trim().slice(0, 40);
     if (!title) return;
     if (tasks.length >= 9) {
@@ -137,12 +155,12 @@ function Index() {
     setTasks((prev) => [...prev, task]);
     setDraft("");
     setAdding(false);
-    void supabase.from("tasks").insert(task);
+    await supabase.from("tasks").insert(task);
   };
 
-  const clearDone = () => {
+  const clearDone = async () => {
     setTasks((prev) => prev.filter((t) => t.status !== "done"));
-    void supabase.from("tasks").delete().eq("status", "done");
+    await supabase.from("tasks").delete().eq("status", "done");
   };
 
   useEffect(() => {
@@ -169,7 +187,7 @@ function Index() {
     : now;
 
   const keyClass =
-    "rounded-xl bg-gradient-to-b from-nokia-key to-nokia-key-dark text-nokia-key-ink font-semibold text-sm py-2.5 ring-1 ring-black/10 active:translate-y-[1px] active:from-nokia-key-dark active:to-nokia-key shadow-[0_2px_0_rgba(0,0,0,0.15)] transition-transform";
+    "rounded-xl bg-gradient-to-b from-nokia-key to-nokia-key-dark text-nokia-key-ink font-semibold text-sm py-2.5 ring-1 ring-black/10 active:translate-y-[1px] active:from-nokia-key-dark active:to-nokia-key";
 
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#eef1f6] px-4 py-10 font-ui text-[#2b3038]">
