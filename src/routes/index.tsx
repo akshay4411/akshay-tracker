@@ -59,11 +59,38 @@ function Index() {
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
   const [since, setSince] = useState(() => Date.now() - 14 * 60 * 1000 - 32 * 1000);
   const [now, setNow] = useState(() => Date.now());
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Load saved tasks once, then persist on every change
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("nokia-tasks");
+      if (raw) {
+        const parsed = JSON.parse(raw) as Task[];
+        if (Array.isArray(parsed) && parsed.length > 0) setTasks(parsed);
+      }
+    } catch {
+      /* ignore corrupt storage */
+    }
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      window.localStorage.setItem("nokia-tasks", JSON.stringify(tasks));
+    } catch {
+      /* storage unavailable */
+    }
+  }, [tasks, loaded]);
 
   const activeTask = tasks.find((t) => t.status === "active");
   const doneCount = tasks.filter((t) => t.status === "done").length;
@@ -85,6 +112,33 @@ function Index() {
       prev.map((t) => (t.id === activeTask.id ? { ...t, status: "done" } : t)),
     );
   };
+
+  const addTask = () => {
+    const title = draft.trim().slice(0, 40);
+    if (!title) return;
+    setTasks((prev) => {
+      if (prev.length >= 9) {
+        setNotice("MEMORY FULL");
+        setAdding(false);
+        setDraft("");
+        return prev;
+      }
+      const id = Math.max(0, ...prev.map((t) => t.id)) + 1;
+      return [...prev, { id, title, status: "todo" as TaskStatus }];
+    });
+    setDraft("");
+    setAdding(false);
+  };
+
+  const clearDone = () => {
+    setTasks((prev) => prev.filter((t) => t.status !== "done"));
+  };
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 2500);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   const cycleTask = (dir: 1 | -1) => {
     const candidates = tasks.filter((t) => t.status !== "done");
