@@ -251,44 +251,70 @@ function Index() {
                   </div>
                 )}
 
-                {/* list */}
-                <div className="relative mt-2.5 space-y-1.5">
-                  {orderedTasks.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => t.status !== "done" && activateTask(t.id)}
-                      className="flex w-full items-center gap-2 text-left font-lcd text-lg leading-none text-nokia-lcd-deep/85 disabled:cursor-default"
-                      disabled={t.status === "done"}
-                    >
-                      <span className="font-pixel text-[7px] text-nokia-lcd-deep/70">
-                        {t.id}
-                      </span>
-                      <span
-                        className={
-                          t.status === "done"
-                            ? "truncate text-nokia-lcd-deep/55 line-through decoration-1"
-                            : "truncate"
-                        }
+                {/* list / add-task input */}
+                {adding ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      addTask();
+                    }}
+                    className="relative mt-2.5 border-b-2 border-nokia-lcd-deep/40 pb-1.5"
+                  >
+                    <div className="font-pixel text-[7px] text-nokia-lcd-deep">
+                      NEW TASK
+                    </div>
+                    <input
+                      autoFocus
+                      value={draft}
+                      maxLength={40}
+                      placeholder="type, then press ↵"
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={() => {
+                        setAdding(false);
+                        setDraft("");
+                      }}
+                      className="mt-1 w-full bg-transparent font-lcd text-lg leading-none text-nokia-lcd-deep placeholder:text-nokia-lcd-deep/40 focus:outline-none"
+                    />
+                  </form>
+                ) : (
+                  <div className="relative mt-2.5 space-y-1.5">
+                    {orderedTasks.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => t.status !== "done" && activateTask(t.id)}
+                        className="flex w-full items-center gap-2 text-left font-lcd text-lg leading-none text-nokia-lcd-deep/85 disabled:cursor-default"
+                        disabled={t.status === "done"}
                       >
-                        {t.title}
-                      </span>
-                      <span
-                        className={`ml-auto font-pixel text-[6px] ${
-                          t.status === "done"
-                            ? "text-nokia-lcd-deep/55"
-                            : "text-nokia-lcd-deep/70"
-                        }`}
-                      >
-                        {t.status === "done" ? "DONE" : "TODO"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                        <span className="font-pixel text-[7px] text-nokia-lcd-deep/70">
+                          {t.id}
+                        </span>
+                        <span
+                          className={
+                            t.status === "done"
+                              ? "truncate text-nokia-lcd-deep/55 line-through decoration-1"
+                              : "truncate"
+                          }
+                        >
+                          {t.title}
+                        </span>
+                        <span
+                          className={`ml-auto font-pixel text-[6px] ${
+                            t.status === "done"
+                              ? "text-nokia-lcd-deep/55"
+                              : "text-nokia-lcd-deep/70"
+                          }`}
+                        >
+                          {t.status === "done" ? "DONE" : "TODO"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* footer hint */}
                 <div className="relative mt-2.5 flex items-center justify-between font-pixel text-[6px] text-nokia-lcd-deep/70">
-                  <span>◄ SET</span>
-                  <span>OK ►</span>
+                  <span>{notice ?? "◄ ► SET"}</span>
+                  <span># NEW · OK DONE</span>
                 </div>
               </div>
             </div>
@@ -301,12 +327,17 @@ function Index() {
                   const task = Number.isNaN(n)
                     ? undefined
                     : tasks.find((t) => t.id === (n === 0 ? 10 : n));
+                  const onClick =
+                    k === "#"
+                      ? () => setAdding(true)
+                      : k === "*"
+                        ? clearDone
+                        : () =>
+                            task &&
+                            task.status !== "done" &&
+                            activateTask(task.id);
                   return (
-                    <button
-                      key={k}
-                      className={keyClass}
-                      onClick={() => task && task.status !== "done" && activateTask(task.id)}
-                    >
+                    <button key={k} className={keyClass} onClick={onClick}>
                       {k}
                     </button>
                   );
