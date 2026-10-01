@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -29,15 +30,8 @@ interface Task {
   id: number;
   title: string;
   status: TaskStatus;
+  since: string | null;
 }
-
-const INITIAL_TASKS: Task[] = [
-  { id: 1, title: "Ship onboarding flow", status: "active" },
-  { id: 2, title: "Draft Q3 roadmap", status: "todo" },
-  { id: 3, title: "Review PR #248", status: "todo" },
-  { id: 4, title: "Fix login bug", status: "done" },
-  { id: 5, title: "Update docs", status: "done" },
-];
 
 function pad(n: number) {
   return n.toString().padStart(2, "0");
@@ -56,82 +50,99 @@ function formatClock(d: Date) {
 }
 
 function Index() {
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
-  const [since, setSince] = useState(() => Date.now() - 14 * 60 * 1000 - 32 * 1000);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Load saved tasks once, then persist on every change
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("nokia-tasks");
-      if (raw) {
-        const parsed = JSON.parse(raw) as Task[];
-        if (Array.isArray(parsed) && parsed.length > 0) setTasks(parsed);
-      }
-    } catch {
-      /* ignore corrupt storage */
-    }
-    setLoaded(true);
-  }, []);
+  const loadTasks = async () => {
+    const { data, error } = await supabase
+      .from("tasks")
+      .select("*")
+      .order("id");
+    if (!error && data) setTasks(data as Task[]);
+  };
 
+  // Initial load + live sync so the manager sees changes instantly
   useEffect(() => {
-    if (!loaded) return;
-    try {
-      window.localStorage.setItem("nokia-tasks", JSON.stringify(tasks));
-    } catch {
-      /* storage unavailable */
-    }
-  }, [tasks, loaded]);
+    loadTasks();
+    const channel = supabase
+      .channel("tasks-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "tasks" },
+        () => {
+          loadTasks();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const activeTask = tasks.find((t) => t.status === "active");
   const doneCount = tasks.filter((t) => t.status === "done").length;
 
   const activateTask = (id: number) => {
+    const since = new Date().toISOString();
     setTasks((prev) =>
       prev.map((t) => ({
         ...t,
         status:
           t.id === id ? "active" : t.status === "active" ? "todo" : t.status,
+        since: t.id === id ? since : t.status === "active" ? null : t.since,
       })),
     );
-    setSince(Date.now());
+    void supabase
+      .from("tasks")
+      .update({ status: "todo", since: null })
+      .eq("status", "active");
+    void supabase
+      .from("tasks")
+      .update({ status: "active", since })
+      .eq("id", id);
   };
 
   const markDone = () => {
     if (!activeTask) return;
     setTasks((prev) =>
-      prev.map((t) => (t.id === activeTask.id ? { ...t, status: "done" } : t)),
+      prev.map((t) =>
+        t.id === activeTask.id ? { ...t, status: "done", since: null } : t,
+      ),
     );
+    void supabase
+      .from("tasks")
+      .update({ status: "done", since: null })
+      .eq("id", activeTask.id);
   };
 
   const addTask = () => {
     const title = draft.trim().slice(0, 40);
     if (!title) return;
-    setTasks((prev) => {
-      if (prev.length >= 9) {
-        setNotice("MEMORY FULL");
-        setAdding(false);
-        setDraft("");
-        return prev;
-      }
-      const id = Math.max(0, ...prev.map((t) => t.id)) + 1;
-      return [...prev, { id, title, status: "todo" as TaskStatus }];
-    });
+    if (tasks.length >= 9) {
+      setNotice("MEMORY FULL");
+      setAdding(false);
+      setDraft("");
+      return;
+    }
+    const id = Math.max(0, ...tasks.map((t) => t.id)) + 1;
+    const task: Task = { id, title, status: "todo", since: null };
+    setTasks((prev) => [...prev, task]);
     setDraft("");
     setAdding(false);
+    void supabase.from("tasks").insert(task);
   };
 
   const clearDone = () => {
     setTasks((prev) => prev.filter((t) => t.status !== "done"));
+    void supabase.from("tasks").delete().eq("status", "done");
   };
 
   useEffect(() => {
@@ -152,6 +163,10 @@ function Index() {
     () => tasks.filter((t) => t.status !== "active"),
     [tasks],
   );
+
+  const sinceMs = activeTask?.since
+    ? new Date(activeTask.since).getTime()
+    : now;
 
   const keyClass =
     "rounded-xl bg-gradient-to-b from-nokia-key to-nokia-key-dark text-nokia-key-ink font-semibold text-sm py-2.5 ring-1 ring-black/10 active:translate-y-[1px] active:from-nokia-key-dark active:to-nokia-key shadow-[0_2px_0_rgba(0,0,0,0.15)] transition-transform";
@@ -230,14 +245,14 @@ function Index() {
                         ► ACTIVE
                       </span>
                       <span className="font-lcd text-lg leading-none text-nokia-lcd-deep tabular-nums">
-                        {formatElapsed(now - since)}
+                        {formatElapsed(now - sinceMs)}
                       </span>
                     </div>
                     <div className="mt-1.5 font-lcd text-xl leading-none text-nokia-lcd-deep">
                       {activeTask.title}
                     </div>
                     <div className="mt-1 font-lcd text-sm leading-none text-nokia-lcd-deep/80">
-                      since {formatClock(new Date(since))} · in progress
+                      since {formatClock(new Date(sinceMs))} · in progress
                     </div>
                   </div>
                 ) : (
