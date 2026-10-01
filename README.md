@@ -1,6 +1,6 @@
 # Nokia Task View
 
-YOu are a software developer . want to build a very aesthetically pleasing nokia tracker for my project manager so that he can see on which task i am  working on
+YOu are a software developer Akshay . want to build a very aesthetically pleasing nokia tracker for my project manager so that he can see on which task i am  working on
 
 This project was built with [Lovable](https://lovable.dev).
 
